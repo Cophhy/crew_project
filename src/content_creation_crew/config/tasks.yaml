@@ -1,0 +1,32 @@
+research_task:
+  description: >
+    Conduct a comprehensive analysis of the latest advancements in {topic}.
+    Identify key trends, breakthrough technologies, and notable industry developments.
+    Use your existing knowledge to provide detailed insights and analysis.
+    Your final answer MUST be a detailed research report with key findings and insights.
+  expected_output: >
+    A comprehensive 3-paragraph research report with introduction, key findings, and future implications
+  agent: researcher
+
+writing_task:
+  description: >
+    Using the research report from the researcher, write a compelling blog post about {topic}.
+    Make the content engaging and accessible to a general tech audience.
+    Your post should be informative yet easy to understand, with a clear structure
+    including introduction, main content sections, and conclusion.
+  expected_output: >
+    A well-structured blog post with engaging title, introduction, main content, and conclusion
+  agent: writer
+  context:
+    - research_task
+
+editing_task:
+  description: >
+    Review the blog post for clarity, engagement, and accuracy. Edit for grammar,
+    style, and flow. Ensure the content is polished and ready for publication.
+    Focus on improving readability and ensuring the message is clear and compelling.
+  expected_output: >
+    A polished, publication-ready blog post with any necessary corrections and improvements
+  agent: editor
+  context:
+    - writing_task 
