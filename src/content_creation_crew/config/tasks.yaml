@@ -1,32 +1,34 @@
 research_task:
-  description: >
-    Conduct a comprehensive analysis of the latest advancements in {topic}.
-    Identify key trends, breakthrough technologies, and notable industry developments.
-    Use your existing knowledge to provide detailed insights and analysis.
-    Your final answer MUST be a detailed research report with key findings and insights.
+  description: |
+    Use the `wikipedia_search` tool to investigate the topic "{topic}".
+    Produce 6–10 concise bullet points with verifiable facts, including definitions,
+    key names, dates, and brief explanations. Include the Wikipedia page URL and up to
+    3–5 external links returned by the tool.
   expected_output: >
-    A comprehensive 3-paragraph research report with introduction, key findings, and future implications
+    A bullet list (6–10 items) plus a "References" section with the collected URLs.
   agent: researcher
 
 writing_task:
-  description: >
-    Using the research report from the researcher, write a compelling blog post about {topic}.
-    Make the content engaging and accessible to a general tech audience.
-    Your post should be informative yet easy to understand, with a clear structure
-    including introduction, main content sections, and conclusion.
+  description: |
+    Using the research findings, write a blog post in Markdown:
+    - Title
+    - TL;DR (3–5 lines)
+    - Introduction
+    - 3–5 H2 sections with clear, helpful explanations
+    - Final considerations
+    - "References" section containing the links provided by the researcher
   expected_output: >
-    A well-structured blog post with engaging title, introduction, main content, and conclusion
+    A clear and well-structured blog post in Markdown, suitable for publication.
   agent: writer
   context:
     - research_task
 
 editing_task:
-  description: >
-    Review the blog post for clarity, engagement, and accuracy. Edit for grammar,
-    style, and flow. Ensure the content is polished and ready for publication.
-    Focus on improving readability and ensuring the message is clear and compelling.
+  description: |
+    Revise the draft for clarity, cohesion, grammar and light SEO (headings, keywords).
+    Ensure consistency with the research facts. Deliver the final Markdown version.
   expected_output: >
-    A polished, publication-ready blog post with any necessary corrections and improvements
+    A polished final Markdown article ready to publish.
   agent: editor
   context:
-    - writing_task 
+    - writing_task

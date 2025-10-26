@@ -1,6 +1,7 @@
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai import LLM
+from content_creation_crew.tools.wikipedia_tool import WikipediaSearchTool
 
 @CrewBase
 class ContentCreationCrewCrew():
@@ -15,12 +16,14 @@ class ContentCreationCrewCrew():
             model="ollama/mistral",
             base_url="http://localhost:11434"
         )
+        self.wiki = WikipediaSearchTool(lang="pt", max_chars=1800)
 
     @agent
     def researcher(self) -> Agent:
         return Agent(
             config=self.agents_config['researcher'],
             llm=self.llm,
+            tools=[self.wiki],
             verbose=True
         )
 

@@ -503,13 +503,17 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "crewai", extra = ["tools"] },
+    { name = "crewai-tools" },
     { name = "litellm" },
+    { name = "requests" },
 ]
 
 [package.metadata]
 requires-dist = [
     { name = "crewai", extras = ["tools"], specifier = "==1.2.0" },
+    { name = "crewai-tools", specifier = ">=1.2.0" },
     { name = "litellm", specifier = ">=1.78.7" },
+    { name = "requests", specifier = ">=2.32.5" },
 ]
 
 [[package]]
