@@ -1,29 +1,54 @@
-# src/content_creation_crew/main.py
-from pathlib import Path
-import yaml
-from .crew import build_crew, build_llm
+#!/usr/bin/env python
+import sys
+from content_creation_crew.crew import ContentCreationCrewCrew
 
-BASE = Path(__file__).resolve().parent
-AGENTS = BASE / "config" / "agents.yaml"
-TASKS = BASE / "config" / "tasks.yaml"
+def run():
+    """
+    Run the crew with a specific topic.
+    """
+    print("Welcome to the Content Creation Crew!")
+    print("This crew will help you create comprehensive blog posts on any topic.")
+    print()
+    
+    topic = input("Enter the topic you want to create content about: ")
+    
+    if not topic.strip():
+        print("Please provide a valid topic.")
+        return
+    
+    print(f"\nCreating content about: {topic}")
+    print("This may take a few minutes as the agents collaborate...")
+    print("-" * 50)
+    
+    inputs = {
+        'topic': topic
+    }
+    
+    try:
+        result = ContentCreationCrewCrew().crew().kickoff(inputs=inputs)
+        print("\n" + "="*50)
+        print("FINAL RESULT:")
+        print("="*50)
+        print(result)
+    except Exception as e:
+        print(f"An error occurred: {e}")
+        print("Make sure Ollama is running and the mistral model is available.")
+        print("Try running: ollama list")
+        print("If mistral is not listed, run: ollama pull mistral")
 
-def load_yaml(path: Path):
-    with open(path, "r", encoding="utf-8") as f:
-        return yaml.safe_load(f)
+def train():
+    """
+    Train the crew for a given number of iterations.
+    """
+    topic = input("Enter the topic for training: ")
+    
+    inputs = {
+        'topic': topic
+    }
+    try:
+        ContentCreationCrewCrew().crew().train(n_iterations=int(sys.argv[1]), inputs=inputs)
+    except Exception as e:
+        raise Exception(f"An error occurred while training the crew: {e}")
 
-def run_crew(user_query: str, model_id: str, lang: str):
-    agents_config = load_yaml(AGENTS)
-    tasks_config = load_yaml(TASKS)
-
-    # injeta a entrada do usuário na primeira task de pesquisa (ajuste o nome se for diferente)
-    if "research_topic" in tasks_config:
-        tasks_config["research_topic"]["input"] = {"topic": user_query}
-    else:
-        # fallback genérico: injete no primeiro item
-        first_key = next(iter(tasks_config))
-        tasks_config[first_key]["input"] = {"query": user_query}
-
-    llm = build_llm(model_id)
-    crew = build_crew(agents_config, tasks_config, llm, lang)
-    result = crew.kickoff()  # retorna o output final do fluxo
-    return str(result)
+if __name__ == "__main__":
+    run()

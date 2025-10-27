@@ -1,46 +1,77 @@
-# src/content_creation_crew/crew.py
-from crewai import Agent, Crew, LLM
-from typing import Dict
+from crewai import Agent, Crew, Process, Task
+from crewai.project import CrewBase, agent, crew, task
+from crewai import LLM
+from content_creation_crew.tools.wikipedia_tool import WikipediaSearchTool
 
-LANG_SYSTEM = {
-    "pt": "Detecte o idioma da última mensagem do usuário e responda no mesmo idioma. Se for português, responda em PT-BR claro e natural.",
-    "en": "Detect the user's language and reply in the same language. If English, use natural, concise tone."
-}
+@CrewBase
+class ContentCreationCrewCrew():
+    """ContentCreationCrew crew"""
+    
+    agents_config = 'config/agents.yaml'
+    tasks_config = 'config/tasks.yaml'
 
-def build_llm(model_id: str) -> LLM:
-    # Use Ollama local
-    return LLM(
-        model=f"ollama/{model_id}",          # p.ex. "ollama/llama3.1:8b-instruct"
-        base_url="http://localhost:11434",   # Ollama local
-        temperature=0.3
-    )
+    def __init__(self) -> None:
+        # Initialize the LLM with Ollama using Mistral
+        self.llm = LLM(
+            model="ollama/mistral",
+            base_url="http://localhost:11434"
+        )
+        self.wiki = WikipediaSearchTool(lang="pt", max_chars=1800)
 
-def build_agents(agents_config: Dict, llm: LLM, lang: str):
-    # exemplo para dois agentes típicos do template; ajuste nomes conforme seu agents.yaml
-    researcher = Agent(
-        config=agents_config["researcher"],  # existente no teu YAML
-        llm=llm,
-        verbose=True,
-        system_prompt=LANG_SYSTEM.get(lang, LANG_SYSTEM["en"])
-    )
-    writer = Agent(
-        config=agents_config["writer"],
-        llm=llm,
-        verbose=True,
-        system_prompt=LANG_SYSTEM.get(lang, LANG_SYSTEM["en"])
-    )
-    return researcher, writer
+    @agent
+    def researcher(self) -> Agent:
+        return Agent(
+            config=self.agents_config['researcher'],
+            llm=self.llm,
+            tools=[self.wiki],
+            verbose=True
+        )
 
-def build_crew(agents_config: Dict, tasks_config: Dict, llm: LLM, lang: str) -> Crew:
-    researcher, writer = build_agents(agents_config, llm, lang)
-    # mapeie tasks do teu tasks.yaml
-    # ex.: tasks_config["research_topic"], tasks_config["compose_article"]
-    crew = Crew(
-        agents=[researcher, writer],
-        tasks=[  # ligue as tasks conforme seu YAML
-            tasks_config["research_topic"].copy(update={"agent": researcher}),
-            tasks_config["compose_article"].copy(update={"agent": writer}),
-        ],
-        verbose=True
-    )
-    return crew
+    @agent
+    def writer(self) -> Agent:
+        return Agent(
+            config=self.agents_config['writer'],
+            llm=self.llm,
+            verbose=True
+        )
+
+    @agent
+    def editor(self) -> Agent:
+        return Agent(
+            config=self.agents_config['editor'],
+            llm=self.llm,
+            verbose=True
+        )
+
+    @task
+    def research_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['research_task'],
+            agent=self.researcher()
+        )
+
+    @task
+    def writing_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['writing_task'],
+            agent=self.writer(),
+            context=[self.research_task()]
+        )
+
+    @task
+    def editing_task(self) -> Task:
+        return Task(
+            config=self.tasks_config['editing_task'],
+            agent=self.editor(),
+            context=[self.writing_task()]
+        )
+
+    @crew
+    def crew(self) -> Crew:
+        """Creates the ContentCreationCrew crew"""
+        return Crew(
+            agents=self.agents,
+            tasks=self.tasks,
+            process=Process.sequential,
+            verbose=True
+        )
