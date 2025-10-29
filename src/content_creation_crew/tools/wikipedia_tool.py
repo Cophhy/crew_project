@@ -1,135 +1,353 @@
-# File: src/content_creation_crew/tools/wikipedia_tool.py
+# src/content_creation_crew/tools/wikipedia_tool.py
 from __future__ import annotations
-from typing import List, Optional, Tuple
+
+# --- stdlib ---
+import os
+import json
 import re
+import time
+import html
+from pydantic import BaseModel, Field, PrivateAttr
+from typing import Optional, Dict, Any, Tuple, Type
+from urllib.parse import urlparse, unquote
+
+# --- third-party ---
+try:
+    # Carrega .env se disponível (não quebra se não tiver)
+    from dotenv import load_dotenv
+    load_dotenv()
+except Exception:
+    pass
+
 import requests
-from crewai.tools import BaseTool  # <- usa o BaseTool do CrewAI
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+from pydantic import BaseModel, Field
 
-_WIKI_UA = "CrewAI-WikipediaTool/1.0 (https://github.com/)"
+# --- crewai ---
+from crewai.tools import BaseTool
 
-def _domain(lang: str) -> str:
-    return f"https://{lang}.wikipedia.org"
+# ==========================
+# Config & Utils
+# ==========================
 
-def _rest_summary(lang: str, title: str) -> Optional[dict]:
-    url = f"{_domain(lang)}/api/rest_v1/page/summary/{requests.utils.quote(title)}"
-    r = requests.get(url, headers={"User-Agent": _WIKI_UA}, timeout=15)
-    return r.json() if r.status_code == 200 else None
+WIKI_API = "https://{lang}.wikipedia.org/w/api.php"
 
-def _search_titles(lang: str, query: str, limit: int = 5) -> List[str]:
-    url = f"{_domain(lang)}/w/api.php"
-    params = {
-        "action": "query",
-        "list": "search",
-        "srsearch": query,
-        "srlimit": str(limit),
-        "format": "json",
-        "utf8": 1,
-    }
-    r = requests.get(url, params=params, headers={"User-Agent": _WIKI_UA}, timeout=15)
-    if r.status_code != 200:
-        return []
-    hits = r.json().get("query", {}).get("search", [])
-    return [h.get("title") for h in hits if h.get("title")]
+APP_UA_NAME = os.getenv("APP_UA_NAME", "ContentCreationCrew/0.1")
+WIKI_CONTACT_RAW = os.getenv("WIKI_CONTACT", "https://github.com/Cophhy/crew_project")
 
-def _fetch_sections(lang: str, title: str, max_chars: int) -> Tuple[str, List[Tuple[str, str]]]:
-    """Return (compact_text, external_refs[(title, url)]) using MediaWiki parse API."""
-    url = f"{_domain(lang)}/w/api.php"
-    params = {
-        "action": "parse",
-        "page": title,
-        "prop": "text|externallinks",
-        "format": "json",
-        "utf8": 1,
-    }
-    r = requests.get(url, params=params, headers={"User-Agent": _WIKI_UA}, timeout=20)
-    if r.status_code != 200:
-        return "", []
-    data = r.json()
-    html = data.get("parse", {}).get("text", {}).get("*", "")
-    links: List[str] = data.get("parse", {}).get("externallinks", [])
+def _format_contact(contact: str) -> str:
+    """Formata contato para User-Agent. Se for e-mail, prefixa com mailto:"""
+    contact = (contact or "").strip()
+    if "@" in contact and not contact.startswith("mailto:"):
+        return f"mailto:{contact}"
+    return contact
 
-    # Extract simple paragraphs from HTML
-    paras = re.findall(r"<p>(.*?)</p>", html, flags=re.IGNORECASE | re.DOTALL)
+WIKI_CONTACT = _format_contact(WIKI_CONTACT_RAW)
 
-    def _clean(t: str) -> str:
-        t = re.sub(r"<.*?>", "", t)
-        t = re.sub(r"\[\d+\]", "", t)
-        return re.sub(r"\s+", " ", t).strip()
+def _maybe_parse_json(payload: str) -> Optional[Dict[str, Any]]:
+    try:
+        return json.loads(payload)
+    except Exception:
+        return None
 
-    text_parts: List[str] = []
-    total = 0
-    for p in paras:
-        c = _clean(p)
-        if not c:
-            continue
-        if total + len(c) + 1 > max_chars:
-            break
-        text_parts.append(c)
-        total += len(c) + 1
-        if len(text_parts) >= 3:  # 2–3 lead paragraphs
-            break
+def _build_session() -> requests.Session:
+    s = requests.Session()
+    retry = Retry(
+        total=3,
+        backoff_factor=0.6,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=frozenset(["GET"]),
+        raise_on_status=False,
+    )
+    s.mount("https://", HTTPAdapter(max_retries=retry))
+    s.headers.update({
+        "User-Agent": f"{APP_UA_NAME} (+{WIKI_CONTACT})",
+        "Accept": "application/json",
+    })
+    return s
 
-    compact = "\n\n".join(text_parts)
+def _strip_html(text: str) -> str:
+    text = re.sub(r"<[^>]+>", "", text)
+    text = html.unescape(text)
+    return text.strip()
 
-    # Build up to 5 external references
-    refs: List[Tuple[str, str]] = []
-    for u in links:
-        if isinstance(u, str):
-            refs.append((u.split("/")[-1][:60] or "link", u))
-            if len(refs) >= 5:
-                break
+# Cria uma única sessão por módulo (compartilhada entre instâncias)
+_SHARED_SESSION = _build_session()
 
-    return compact, refs
+
+# ==========================
+# Search Tool
+# ==========================
+
+class WikipediaSearchInput(BaseModel):
+    query: str = Field(..., description="Plain text query or JSON string.")
 
 class WikipediaSearchTool(BaseTool):
-    """Wikipedia search & summary (pt with en fallback)."""
+    """Search Wikipedia strictly via MediaWiki API (no external links)."""
 
+    # Campos Pydantic (configuráveis por instância)
+    lang: str = "en"
+    max_chars: int = 1800
+
+    # Metadados do Tool
     name: str = "wikipedia_search"
     description: str = (
-        "Searches Wikipedia (pt with en fallback) and returns the first paragraphs, "
-        "plus up to 5 external links. Use it to gather concise facts and references."
+        "Search Wikipedia using ONLY the official MediaWiki API. "
+        "Accepts either a plain query string, or a JSON string like "
+        '{"query": "...", "lang": "en", "limit": 5}. '
+        "Returns titles, snippets, and Wikipedia URLs."
     )
 
-    # Pydantic fields (become constructor kwargs automatically)
-    lang: str = "pt"
-    max_chars: int = 1600
+    args_schema: type[BaseModel] = WikipediaSearchInput 
+    _session: ClassVar[requests.Session] = _SHARED_SESSION
+
+    def _call_api(self, lang: str, params: Dict[str, Any]) -> requests.Response:
+        params = {"origin": "*", **params}
+        url = WIKI_API.format(lang=lang)
+        r = self._session.get(url, params=params, timeout=20)
+        if r.status_code == 403:
+            time.sleep(0.8)
+            r = self._session.get(url, params=params, timeout=20)
+        r.raise_for_status()
+        return r
 
     def _run(self, query: str) -> str:
-        if not isinstance(query, str) or not query.strip():
-            return "[wikipedia_search] Provide a non-empty text query."
+        data = _maybe_parse_json(query)
+        if isinstance(data, dict):
+            q = data.get("query") or data.get("q") or ""
+            lang = (data.get("lang") or self.lang or "en").strip() or "en"
+            limit = int(data.get("limit") or 5)
+        else:
+            q = query
+            lang = self.lang or "en"
+            limit = 5
 
-        lang = (self.lang or "pt").lower()
-        titles = _search_titles(lang, query, limit=5)
+        if not q or not isinstance(q, str):
+            return "No Wikipedia results for this query."
 
-        used_lang = lang
-        if not titles:
-            used_lang = "en"
-            titles = _search_titles(used_lang, query, limit=5)
-            if not titles:
-                return f"[wikipedia_search] No results (pt/en) for: {query}"
+        params = {
+            "action": "query",
+            "list": "search",
+            "srsearch": q,
+            "srlimit": max(1, min(limit, 20)),
+            "format": "json",
+            "utf8": 1,
+        }
 
-        title = titles[0]
-        summary = _rest_summary(used_lang, title) or {}
-        lead = summary.get("extract") or ""
+        r = self._call_api(lang, params)
+        results = r.json().get("query", {}).get("search", [])
 
-        body, refs = _fetch_sections(used_lang, title, max_chars=max(400, self.max_chars - len(lead)))
+        if not results:
+            return "No Wikipedia results for this query."
 
-        page_url = summary.get("content_urls", {}).get("desktop", {}).get("page") or (
-            f"{_domain(used_lang)}/wiki/{requests.utils.quote(title.replace(' ', '_'))}"
-        )
+        lines = []
+        for i, it in enumerate(results):
+            title = it.get("title", "")
+            url = f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"
+            snippet = it.get("snippet", "")
+            snippet = snippet.replace('<span class="searchmatch">', "").replace("</span>", "")
+            snippet = _strip_html(snippet)
+            if len(snippet) > self.max_chars:
+                snippet = snippet[: self.max_chars].rstrip() + "..."
+            lines.append(f"- {i+1}. {title} – {url} — {snippet}")
 
-        parts: List[str] = [f"[Wikipedia:{used_lang}] {title} — {page_url}"]
-        if lead:
-            parts.append(lead.strip())
-        if body:
-            parts.append(body.strip())
-        if refs:
-            parts.append("\nExternal references (max 5):")
-            parts.extend([f"{i}. {u}" for i, (_, u) in enumerate(refs, 1)])
+        return "Wikipedia results (API)\n" + "\n".join(lines)
 
-        return "\n\n".join(parts)
+    async def _arun(self, *_args, **_kwargs) -> str:
+        raise NotImplementedError("WikipediaSearchTool does not support async.")
 
-# Manual test:
-if __name__ == "__main__":
-    tool = WikipediaSearchTool(lang="pt", max_chars=1400)
-    print(tool._run("inteligência artificial na saúde"))
+
+# ==========================
+# Fetch Tool
+# ==========================
+
+class WikipediaFetchInput(BaseModel):
+    # Aceita E/OU: title_or_json (string), ou campos separados
+    title_or_json: Optional[str] = Field(
+        default=None,
+        description="Plain title string or JSON string. Can be omitted if using 'title'/'url'."
+    )
+    title: Optional[str] = Field(default=None, description="Wikipedia page title")
+    lang: Optional[str] = Field(default=None, description="Language code, e.g. 'en'")
+    section: Optional[str] = Field(default=None, description="Section name to fetch")
+    url: Optional[str] = Field(default=None, description="Full Wikipedia /wiki/ URL, may include #anchor")
+
+class WikipediaFetchTool(BaseTool):
+    """Fetch plaintext extract (or a section) from a Wikipedia page via MediaWiki API.
+       Accepts page title, JSON string, OR a full /wiki/ URL (with #anchor).
+    """
+
+    # Campos Pydantic
+    lang: str = "en"
+    max_chars: int = 6000
+
+    # Metadados do Tool
+    name: str = "wikipedia_fetch"
+    description: str = (
+        "Fetch plaintext from a Wikipedia page using the MediaWiki API. "
+        "You can pass: (1) title_or_json as a string, (2) separate fields like "
+        '{"title":"...","lang":"en","section":"History"}, or (3) "url": '
+        "https://en.wikipedia.org/wiki/String_theory#Overview ."
+    )
+
+    args_schema: type[BaseModel] = WikipediaFetchInput
+    _session: ClassVar[requests.Session] = _SHARED_SESSION
+
+
+    # ---------- HTTP ----------
+    def _call_api(self, lang: str, params: Dict[str, Any]) -> requests.Response:
+        params = {"origin": "*", **params}
+        url = WIKI_API.format(lang=lang)
+        r = self._session.get(url, params=params, timeout=20)
+        if r.status_code == 403:
+            time.sleep(0.8)
+            r = self._session.get(url, params=params, timeout=20)
+        r.raise_for_status()
+        return r
+
+    # ---------- helpers ----------
+    @staticmethod
+    def _is_wiki_url(s: str) -> bool:
+        try:
+            p = urlparse(s)
+            return bool(p.scheme and p.netloc) and "/wiki/" in p.path
+        except Exception:
+            return False
+
+    @staticmethod
+    def _clean_section_name(s: str) -> str:
+        s = s.strip().strip("#").strip("}").strip()
+        s = unquote(s)
+        s = s.replace("_", " ")
+        return s
+
+    @staticmethod
+    def _norm(s: str) -> str:
+        return re.sub(r"\s+", " ", s.lower().strip())
+
+    def _extract_title_and_section_from_url(self, url: str) -> Tuple[Optional[str], str, Optional[str]]:
+        p = urlparse(url)
+        host = (p.netloc or "").lower()
+        lang = None
+        if host.endswith(".wikipedia.org"):
+            lang = host.split(".wikipedia.org")[0] or None
+        path = p.path or ""
+        try:
+            idx = path.index("/wiki/")
+            raw_title = path[idx + len("/wiki/") :]
+        except ValueError:
+            raw_title = ""
+        title = unquote(raw_title).replace("_", " ").strip()
+        section = self._clean_section_name(p.fragment) if p.fragment else None
+        return (lang, title, section)
+
+    # ---------- implementação principal ----------
+    def _run(
+        self,
+        title_or_json: Optional[str] = None,
+        title: Optional[str] = None,
+        lang: Optional[str] = None,
+        section: Optional[str] = None,
+        url: Optional[str] = None,
+    ) -> str:
+        effective_lang = (lang or self.lang or "en").strip() or "en"
+
+        # 1) Se veio URL, extrai título/âncora
+        if url and self._is_wiki_url(url):
+            url_lang, url_title, url_section = self._extract_title_and_section_from_url(url)
+            if url_lang:
+                effective_lang = url_lang
+            title = url_title or title
+            section = url_section or section
+
+        # 2) Se veio title_or_json (string), tentar parsear como JSON; senão usar como título simples
+        if title_or_json:
+            parsed = _maybe_parse_json(title_or_json)
+            if isinstance(parsed, dict):
+                title = parsed.get("title") or title
+                effective_lang = (parsed.get("lang") or effective_lang).strip() or "en"
+                sec = parsed.get("section")
+                if isinstance(sec, str):
+                    section = self._clean_section_name(sec)
+            else:
+                # era um título simples
+                title = title or title_or_json.strip()
+
+        if not title:
+            return "Please provide a valid Wikipedia page title or URL."
+
+        # 3) Seção específica?
+        if section:
+            target = self._norm(self._clean_section_name(str(section)))
+            sec_params = {
+                "action": "parse",
+                "page": title,
+                "prop": "sections",
+                "format": "json",
+                "utf8": 1
+            }
+            rs = self._call_api(effective_lang, sec_params)
+            sections = rs.json().get("parse", {}).get("sections", [])
+
+            idx = None
+            for s in sections:
+                line = s.get("line", "")
+                if not line:
+                    continue
+                nline = self._norm(self._clean_section_name(line))
+                if nline == target or nline.startswith(target):
+                    idx = s.get("index")
+                    break
+            if idx is None:
+                # fallback: remove parênteses
+                alt = re.sub(r"[\(\)]", "", target)
+                for s in sections:
+                    nline = self._norm(self._clean_section_name(s.get("line", "")))
+                    if nline == alt or nline.startswith(alt):
+                        idx = s.get("index")
+                        break
+            if idx is None:
+                return f"Section '{section}' not found in '{title}' ({effective_lang})."
+
+            params = {
+                "action": "parse",
+                "page": title,
+                "prop": "text",
+                "section": idx,
+                "format": "json",
+                "utf8": 1
+            }
+            r = self._call_api(effective_lang, params)
+            html_text = r.json().get("parse", {}).get("text", {}).get("*", "")
+            text = _strip_html(html_text)
+            if not text:
+                return f"Section '{section}' found but empty for '{title}' ({effective_lang})."
+            if len(text) > self.max_chars:
+                text = text[: self.max_chars].rstrip() + "..."
+            return f"=== {title} — Section: {section} ===\n{text}"
+
+        # 4) Página inteira (extract)
+        params = {
+            "action": "query",
+            "prop": "extracts",
+            "titles": title,
+            "explaintext": 1,
+            "format": "json",
+            "utf8": 1
+        }
+        r = self._call_api(effective_lang, params)
+        pages = r.json().get("query", {}).get("pages", {})
+        if not pages:
+            return f"Page '{title}' not found on Wikipedia ({effective_lang})."
+
+        page = next(iter(pages.values()))
+        extract = (page.get("extract") or "").strip()
+        if not extract:
+            return f"Page '{title}' found, but no extract available ({effective_lang})."
+        if len(extract) > self.max_chars:
+            extract = extract[: self.max_chars].rstrip() + "..."
+        return f"=== {title} (Wikipedia {effective_lang}) ===\n{extract}"
+
+    async def _arun(self, *_args, **_kwargs) -> str:
+        raise NotImplementedError("WikipediaFetchTool does not support async.")

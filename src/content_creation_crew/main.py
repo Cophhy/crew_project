@@ -1,4 +1,5 @@
-#!/usr/bin/env python
+from dotenv import load_dotenv
+load_dotenv()
 import sys
 from content_creation_crew.crew import ContentCreationCrewCrew
 
