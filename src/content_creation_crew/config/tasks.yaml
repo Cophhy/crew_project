@@ -2,11 +2,14 @@ research_task:
   description: |
     Use only the `wikipedia_search` and `wikipedia_fetch` tools to investigate the topic "{topic}".
     Provide 6–10 bullet points with verifiable facts (definitions, key people, dates, important terms).
-    For each bullet, include in parentheses the corresponding Wikipedia URL(s).
-    Do not include any external links.
+    Do not include any external links (only Wikipedia).
+    Return output that fits the Pydantic schema.
   expected_output: |
-    A list of 6–10 bullet points plus a "References (Wikipedia)" section containing only Wikipedia URLs.
+    A JSON object matching `ResearchOutput`:
+      - bullets: 6–10 strings (facts)
+      - sources: list of Wikipedia URLs (only wikipedia.org)
   agent: researcher
+  output_pydantic: content_creation_crew.schemas.ResearchOutput
 
 writing_task:
   description: |
@@ -16,8 +19,8 @@ writing_task:
     - Introduction
     - 3–5 explanatory sections (H2)
     - Conclusion
-    - "References (Wikipedia)" section containing only the same URLs provided by the researcher.
-    Do not add or reference any external links.
+    - "References (Wikipedia)" section containing only the URLs from `research_task.sources`.
+    Do not add or reference any external links (only Wikipedia).
   expected_output: |
     A complete Markdown article ready to publish, referencing only Wikipedia pages.
   agent: writer
@@ -27,10 +30,11 @@ writing_task:
 editing_task:
   description: |
     Review the draft for clarity, grammar, cohesion, and factual alignment with the information obtained from Wikipedia.
-    Make sure the final version includes only Wikipedia references.
+    Make sure the final version includes only Wikipedia references, reusing exactly `research_task.sources`.
     Deliver a polished Markdown file.
   expected_output: |
     The final, edited Markdown article, clean and professional, with only Wikipedia references.
   agent: editor
   context:
     - writing_task
+    - research_task
