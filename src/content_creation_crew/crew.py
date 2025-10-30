@@ -2,11 +2,15 @@ from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai import LLM
 
-# ✅ agora importamos as CLASSES BaseTool que você acabou de criar
+# ✅ suas tools existentes (Wikipedia)
 from content_creation_crew.tools.wikipedia_tool import (
     WikipediaSearchTool,
     WikipediaFetchTool,
 )
+
+# 🔹 ADICIONADO: tool de contagem de palavras do corpo
+from content_creation_crew.tools.wordcount import BodyWordCountTool  # <— ADICIONADO
+
 
 @CrewBase
 class ContentCreationCrewCrew():
@@ -23,6 +27,7 @@ class ContentCreationCrewCrew():
         # ✅ instâncias de BaseTool do CrewAI
         self.wiki_search = WikipediaSearchTool(lang="en", max_chars=1800)
         self.wiki_fetch  = WikipediaFetchTool(lang="en", max_chars=6000)
+        self.body_wc     = BodyWordCountTool()  # <— ADICIONADO
 
     @agent
     def researcher(self) -> Agent:
@@ -39,7 +44,7 @@ class ContentCreationCrewCrew():
         return Agent(
             config=self.agents_config['writer'],
             llm=self.llm,
-            tools=[],
+            tools=[],  # mantém sem tools
             allow_delegation=False,
             verbose=True,
         )
@@ -49,7 +54,7 @@ class ContentCreationCrewCrew():
         return Agent(
             config=self.agents_config['editor'],
             llm=self.llm,
-            tools=[],
+            tools=[self.body_wc],  # <— ADICIONADO: só a tool de word count
             allow_delegation=False,
             verbose=True,
         )
@@ -77,11 +82,36 @@ class ContentCreationCrewCrew():
             context=[self.writing_task()],
         )
 
+    # 🔹 ADICIONADO: task final de garantia de ≥ 300 palavras no CORPO
+    @task
+    def enforce_min_words_task(self) -> Task:
+        """
+        Esta task usa a tool `body_word_count` para medir o corpo do artigo
+        (exclui Title, TL;DR, headings e a seção "References (Wikipedia)").
+        Se < 300, expande SOMENTE o corpo até ≥ 300 palavras, mantendo título,
+        headings e a lista de referências/URLs exatamente como estão.
+        """
+        return Task(
+            description=(
+                "Use the `body_word_count` tool to compute the BODY word count of the Markdown article below "
+                "(exclude Title, TL;DR, all headings, and the 'References (Wikipedia)' section). "
+                "If the BODY has 300 words or more, return the article EXACTLY as-is. "
+                "If the BODY has fewer than 300 words, expand ONLY the BODY to reach at least 300 words, "
+                "preserving the existing Title, all headings, and keeping the 'References (Wikipedia)' list "
+                "identical (same entries, same URLs). Do NOT add new links or sources; only elaborate using "
+                "the already-present research facts and explanations."
+            ),
+            agent=self.editor(),                 # o editor já tem a tool
+            context=[self.editing_task()],       # pega o artigo já editado
+            expected_output="A Markdown article whose BODY is ≥ 300 words (or unchanged if already ≥ 300).",
+            # obs.: não é necessário declarar tools aqui; elas vêm do Agent
+        )
+
     @crew
     def crew(self) -> Crew:
         return Crew(
             agents=self.agents,
-            tasks=self.tasks,
+            tasks=self.tasks,        # a enforce_min_words_task vem por último (sequencial)
             process=Process.sequential,
             verbose=True,
         )
