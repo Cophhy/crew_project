@@ -7,13 +7,11 @@ import json
 import re
 import time
 import html
-from pydantic import BaseModel, Field, PrivateAttr
-from typing import Optional, Dict, Any, Tuple, Type
+from typing import Optional, Dict, Any, Tuple, ClassVar, Type  # <- ClassVar e Type
 from urllib.parse import urlparse, unquote
 
 # --- third-party ---
 try:
-    # Carrega .env se disponível (não quebra se não tiver)
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
@@ -22,7 +20,7 @@ except Exception:
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field  # <- manter um único import
 
 # --- crewai ---
 from crewai.tools import BaseTool
@@ -37,7 +35,6 @@ APP_UA_NAME = os.getenv("APP_UA_NAME", "ContentCreationCrew/0.1")
 WIKI_CONTACT_RAW = os.getenv("WIKI_CONTACT", "https://github.com/Cophhy/crew_project")
 
 def _format_contact(contact: str) -> str:
-    """Formata contato para User-Agent. Se for e-mail, prefixa com mailto:"""
     contact = (contact or "").strip()
     if "@" in contact and not contact.startswith("mailto:"):
         return f"mailto:{contact}"
@@ -57,7 +54,7 @@ def _build_session() -> requests.Session:
         total=3,
         backoff_factor=0.6,
         status_forcelist=[429, 500, 502, 503, 504],
-        allowed_methods=frozenset(["GET"]),
+        allowed_methods=frozenset({"GET"}),  # <- ok para urllib3 1.26+ / 2.x
         raise_on_status=False,
     )
     s.mount("https://", HTTPAdapter(max_retries=retry))
@@ -72,9 +69,7 @@ def _strip_html(text: str) -> str:
     text = html.unescape(text)
     return text.strip()
 
-# Cria uma única sessão por módulo (compartilhada entre instâncias)
 _SHARED_SESSION = _build_session()
-
 
 # ==========================
 # Search Tool
@@ -86,7 +81,7 @@ class WikipediaSearchInput(BaseModel):
 class WikipediaSearchTool(BaseTool):
     """Search Wikipedia strictly via MediaWiki API (no external links)."""
 
-    # Campos Pydantic (configuráveis por instância)
+    # Config por instância
     lang: str = "en"
     max_chars: int = 1800
 
@@ -99,8 +94,8 @@ class WikipediaSearchTool(BaseTool):
         "Returns titles, snippets, and Wikipedia URLs."
     )
 
-    args_schema: type[BaseModel] = WikipediaSearchInput 
-    _session: ClassVar[requests.Session] = _SHARED_SESSION
+    args_schema: Type[BaseModel] = WikipediaSearchInput  # <- Type[BaseModel]
+    _session: ClassVar[requests.Session] = _SHARED_SESSION  # <- ClassVar importado
 
     def _call_api(self, lang: str, params: Dict[str, Any]) -> requests.Response:
         params = {"origin": "*", **params}
@@ -129,8 +124,8 @@ class WikipediaSearchTool(BaseTool):
         params = {
             "action": "query",
             "list": "search",
-            "srsearch": q,
-            "srlimit": max(1, min(limit, 20)),
+            "srsearch": q,                    # MediaWiki API param
+            "srlimit": max(1, min(limit, 20)),  # MediaWiki API param
             "format": "json",
             "utf8": 1,
         }
@@ -157,13 +152,11 @@ class WikipediaSearchTool(BaseTool):
     async def _arun(self, *_args, **_kwargs) -> str:
         raise NotImplementedError("WikipediaSearchTool does not support async.")
 
-
 # ==========================
 # Fetch Tool
 # ==========================
 
 class WikipediaFetchInput(BaseModel):
-    # Aceita E/OU: title_or_json (string), ou campos separados
     title_or_json: Optional[str] = Field(
         default=None,
         description="Plain title string or JSON string. Can be omitted if using 'title'/'url'."
@@ -178,11 +171,9 @@ class WikipediaFetchTool(BaseTool):
        Accepts page title, JSON string, OR a full /wiki/ URL (with #anchor).
     """
 
-    # Campos Pydantic
     lang: str = "en"
     max_chars: int = 6000
 
-    # Metadados do Tool
     name: str = "wikipedia_fetch"
     description: str = (
         "Fetch plaintext from a Wikipedia page using the MediaWiki API. "
@@ -191,9 +182,8 @@ class WikipediaFetchTool(BaseTool):
         "https://en.wikipedia.org/wiki/String_theory#Overview ."
     )
 
-    args_schema: type[BaseModel] = WikipediaFetchInput
+    args_schema: Type[BaseModel] = WikipediaFetchInput  # <- Type[BaseModel]
     _session: ClassVar[requests.Session] = _SHARED_SESSION
-
 
     # ---------- HTTP ----------
     def _call_api(self, lang: str, params: Dict[str, Any]) -> requests.Response:
@@ -253,7 +243,7 @@ class WikipediaFetchTool(BaseTool):
     ) -> str:
         effective_lang = (lang or self.lang or "en").strip() or "en"
 
-        # 1) Se veio URL, extrai título/âncora
+        # 1) URL com possível #anchor
         if url and self._is_wiki_url(url):
             url_lang, url_title, url_section = self._extract_title_and_section_from_url(url)
             if url_lang:
@@ -261,7 +251,7 @@ class WikipediaFetchTool(BaseTool):
             title = url_title or title
             section = url_section or section
 
-        # 2) Se veio title_or_json (string), tentar parsear como JSON; senão usar como título simples
+        # 2) title_or_json (string simples ou JSON)
         if title_or_json:
             parsed = _maybe_parse_json(title_or_json)
             if isinstance(parsed, dict):
@@ -271,13 +261,12 @@ class WikipediaFetchTool(BaseTool):
                 if isinstance(sec, str):
                     section = self._clean_section_name(sec)
             else:
-                # era um título simples
                 title = title or title_or_json.strip()
 
         if not title:
             return "Please provide a valid Wikipedia page title or URL."
 
-        # 3) Seção específica?
+        # 3) Seção específica
         if section:
             target = self._norm(self._clean_section_name(str(section)))
             sec_params = {
@@ -300,7 +289,6 @@ class WikipediaFetchTool(BaseTool):
                     idx = s.get("index")
                     break
             if idx is None:
-                # fallback: remove parênteses
                 alt = re.sub(r"[\(\)]", "", target)
                 for s in sections:
                     nline = self._norm(self._clean_section_name(s.get("line", "")))
