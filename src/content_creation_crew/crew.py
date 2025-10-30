@@ -11,10 +11,11 @@ from content_creation_crew.tools.wikipedia_tool import (
     WikipediaFetchTool,
 )
 
-# Pydantic schemas (para output_json)
+# Pydantic schemas (saídas estruturadas)
 from content_creation_crew.schemas.outline import OutlineModel
 from content_creation_crew.schemas.factcheck import FactCheckReport
 from content_creation_crew.schemas.article import ArticleDraft  # backend valida depois em ArticleModel
+from content_creation_crew.schemas.research import ResearchOutput  # topic + bullets (cada bullet tem fact + urls)
 
 
 @CrewBase
@@ -23,7 +24,7 @@ class ContentCreationCrewCrew:
     ContentCreationCrew: pipeline de pesquisa -> planejamento -> escrita -> checagem -> edição
     - Usa Ollama via crewai.LLM (model/base_url configuráveis por env)
     - Tools: wikipedia_search / wikipedia_fetch (MediaWiki API)
-    - Saídas estruturadas: OutlineModel, ArticleDraft, FactCheckReport
+    - Saídas estruturadas: ResearchOutput, OutlineModel, ArticleDraft, FactCheckReport
     """
 
     # mapeamentos para os YAMLs
@@ -35,12 +36,15 @@ class ContentCreationCrewCrew:
         model_id = os.getenv("MODEL_ID", "ollama/mistral")
         base_url = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 
+        # DICA: um pouquinho de determinismo ajuda a manter JSON estável
         self.llm = LLM(
             model=model_id,
             base_url=base_url,
+            temperature=0.1,
+            timeout=120,
         )
 
-        # Instâncias das ferramentas (sem kwargs extras)
+        # Instâncias das ferramentas
         self.wiki_search = WikipediaSearchTool()
         self.wiki_fetch = WikipediaFetchTool()
 
@@ -56,16 +60,16 @@ class ContentCreationCrewCrew:
             verbose=True,
         )
 
-    @agent
-    def content_planner(self) -> Agent:
-        # Planeja a estrutura do artigo (outline)
-        return Agent(
-            config=self.agents_config["content_planner"],
-            llm=self.llm,
-            tools=[],
-            allow_delegation=False,
-            verbose=True,
-        )
+    # @agent
+    # def content_planner(self) -> Agent:
+    #     # Planeja a estrutura do artigo (outline)
+    #     return Agent(
+    #         config=self.agents_config["content_planner"],
+    #         llm=self.llm,
+    #         tools=[],
+    #         allow_delegation=False,
+    #         verbose=True,
+    #     )
 
     @agent
     def writer(self) -> Agent:
@@ -103,10 +107,12 @@ class ContentCreationCrewCrew:
     # ---------------- Tasks ----------------
     @task
     def research_task(self) -> Task:
-        # Pesquisador entrega bullets + referências Wikipedia
+        # Pesquisador entrega bullets + referências Wikipedia (saída estruturada!)
         return Task(
             config=self.tasks_config["research_task"],
             agent=self.researcher(),
+            # USE SEMPRE output_pydantic (mais sólido que output_json com Ollama)
+            output_pydantic=ResearchOutput,
         )
 
     @task
@@ -114,9 +120,9 @@ class ContentCreationCrewCrew:
         # Planejador produz OutlineModel usando SOMENTE a pesquisa
         return Task(
             config=self.tasks_config["planning_task"],
-            agent=self.content_planner(),
+            # agent=self.content_planner(),
             context=[self.research_task()],
-            output_json=OutlineModel,
+            output_pydantic=OutlineModel,
         )
 
     @task
@@ -126,7 +132,7 @@ class ContentCreationCrewCrew:
             config=self.tasks_config["writing_task"],
             agent=self.writer(),
             context=[self.research_task(), self.planning_task()],
-            output_json=ArticleDraft,
+            output_pydantic=ArticleDraft,
         )
 
     @task
@@ -136,7 +142,7 @@ class ContentCreationCrewCrew:
             config=self.tasks_config["fact_check_task"],
             agent=self.fact_checker(),
             context=[self.research_task(), self.writing_task()],
-            output_json=FactCheckReport,
+            output_pydantic=FactCheckReport,
         )
 
     @task
@@ -146,7 +152,7 @@ class ContentCreationCrewCrew:
             config=self.tasks_config["editing_task"],
             agent=self.copy_editor(),
             context=[self.writing_task(), self.fact_check_task()],
-            output_json=ArticleDraft,
+            output_pydantic=ArticleDraft,
         )
 
     # ---------------- Crew ----------------
@@ -155,7 +161,7 @@ class ContentCreationCrewCrew:
         return Crew(
             agents=[
                 self.researcher(),
-                self.content_planner(),
+                # self.content_planner(),
                 self.writer(),
                 self.fact_checker(),
                 self.copy_editor(),
@@ -165,7 +171,7 @@ class ContentCreationCrewCrew:
                 self.planning_task(),
                 self.writing_task(),
                 self.fact_check_task(),
-                self.editing_task(),
+                self.editing_task(),  
             ],
             process=Process.sequential,
             verbose=True,

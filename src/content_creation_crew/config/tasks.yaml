@@ -1,47 +1,39 @@
 research_task:
-  description: |
-    Use ONLY the `wikipedia_search` and `wikipedia_fetch` tools (MediaWiki Action API) to investigate "{topic}".
-    Produce 6–10 bullet points with verifiable facts (definitions, key people, dates, terms). After each bullet,
-    include the exact Wikipedia URL(s) in parentheses. If a fact isn’t on Wikipedia, say “Not available on Wikipedia”.
-    Rules:
-      - Tools allowed: wikipedia_search, wikipedia_fetch (no other tools).
-      - Cite only canonical Wikipedia article URLs.
-      - No external links. No speculation.
-      - Think through your steps internally; DO NOT output your reasoning.
-  expected_output: |
-    A list of 6–10 bullet points plus a final section titled "References (Wikipedia)" containing ONLY Wikipedia URLs.
-  agent: researcher
+  description: >
+    Use ONLY the tools `wikipedia_search` and `wikipedia_fetch` (MediaWiki Action API)
+    to investigate the topic: "{topic}" (language: "{language}").
+    Goals:
+      - Produce 6–10 bullet points with verifiable facts (definitions, key people, dates, terms).
+      - After each bullet, include the exact canonical Wikipedia URL(s) returned by the tools.
+      - No speculation. No external links.
+
+    Tool rules:
+      - Call ONE tool per step.
+      - On the 'Action:' line, write EXACTLY one of: wikipedia_search, wikipedia_fetch.
+      - Do NOT add anything after the tool name (no '(multiple times)', numbering, or comments).
+
+    Output rules:
+      - Return ONLY a valid JSON object matching the ResearchOutput model.
+      - No markdown, no code fences, no Thought/Action text in the final output.
+
+  expected_output: "ResearchOutput JSON with 6–10 bullets; each bullet has 1+ canonical Wikipedia URLs."
+
 
 planning_task:
-  description: |
-    Using ONLY the researcher’s findings, produce an outline and RETURN ONLY a single JSON object that matches the schema below.
+  description: >
+    Using ONLY the researcher’s findings, produce an outline.
     Goals:
-      - Align headings with users’ information needs (strong information scent).
-      - Produce scannable H2s and 3–6 bullets under each.
-      - For each section, list the exact supporting Wikipedia URLs from research (no new links).
+      - Headings aligned to user intent (strong information scent).
+      - For EACH section, produce 3–6 concise bullet points (NEVER fewer than 3).
+      - For EACH section, list the exact supporting Wikipedia canonical URLs from the research (no new links).
+
     Output rules:
-      - Return ONLY JSON (no Markdown/code fences/extra text).
-      - Do not invent sources or facts; if insufficient, state minimal viable sections and note gaps.
-    OutlineModel schema:
-      {
-        "audience": "string",
-        "angle": "string",
-        "working_title": "string",
-        "tl_dr": "string (2–3 sentences)",
-        "seo_keywords": ["string", "..."],
-        "sections": [
-          {
-            "heading": "string",
-            "bullet_points": ["string", "..."],      // 3–6
-            "wikipedia_urls": ["https://en.wikipedia.org/...", "..."]  // ≥1, from research
-          }
-        ]
-      }
-  expected_output: |
-    A JSON object matching OutlineModel exactly. No extra keys, no prose.
-  agent: content_planner
-  context:
-    - research_task
+      - Return ONLY a single JSON object matching OutlineModel (no markdown/code fences).
+      - If research is insufficient for 3 bullets, add neutral, non-claim bullets
+        such as "Scope and relevance", "Key terms to define", "Open questions"
+        to reach 3 bullets, without inventing facts.
+
+  expected_output: "OutlineModel JSON with ≥1 sections; each section has 3–6 bullets and ≥1 Wikipedia URL."
 
 writing_task:
   description: |
