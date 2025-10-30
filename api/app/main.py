@@ -1,20 +1,23 @@
-# api/app/main.py
+import os, sys
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "../../"))
+SRC = os.path.join(ROOT, "src")
+if SRC not in sys.path:
+    sys.path.insert(0, SRC)
+
 from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
-from .config import settings
-from .routers import runs, stream  # importa os routers
+from content_creation_crew.crew import ContentCreationCrewRunner
 
-app = FastAPI(title="Crew Content API")  # <- crie o app primeiro
+app = FastAPI()
 
-# CORS para o front
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=settings.ALLOW_ORIGINS,
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
 
-# registre os routers depois que o app existir
-app.include_router(runs.router)
-app.include_router(stream.router)
+class RunRequest(BaseModel):
+    topic: str = Field(..., description="Tópico da pesquisa/artigo")
+    # acrescente outros inputs conforme sua crew
+
+
+@app.post("/run", response_model=CrewOutput)
+def run_crew(req: RunRequest) -> CrewOutput:
+    runner = ContentCreationCrewRunner()
+    # repasse todos os campos do request como inputs
+    out = runner.run(**req.model_dump())
+    return out
