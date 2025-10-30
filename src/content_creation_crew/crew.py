@@ -1,5 +1,7 @@
 # src/content_creation_crew/crew.py
 from __future__ import annotations
+from .schemas import CrewOutput
+
 
 from pathlib import Path
 from time import perf_counter
