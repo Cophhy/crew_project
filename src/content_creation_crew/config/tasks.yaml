@@ -1,36 +1,123 @@
 research_task:
   description: |
-    Use only the `wikipedia_search` and `wikipedia_fetch` tools to investigate the topic "{topic}".
-    Provide 6–10 bullet points with verifiable facts (definitions, key people, dates, important terms).
-    For each bullet, include in parentheses the corresponding Wikipedia URL(s).
-    Do not include any external links.
+    Use ONLY the `wikipedia_search` and `wikipedia_fetch` tools (MediaWiki Action API) to investigate "{topic}".
+    Produce 6–10 bullet points with verifiable facts (definitions, key people, dates, terms). After each bullet,
+    include the exact Wikipedia URL(s) in parentheses. If a fact isn’t on Wikipedia, say “Not available on Wikipedia”.
+    Rules:
+      - Tools allowed: wikipedia_search, wikipedia_fetch (no other tools).
+      - Cite only canonical Wikipedia article URLs.
+      - No external links. No speculation.
+      - Think through your steps internally; DO NOT output your reasoning.
   expected_output: |
-    A list of 6–10 bullet points plus a "References (Wikipedia)" section containing only Wikipedia URLs.
+    A list of 6–10 bullet points plus a final section titled "References (Wikipedia)" containing ONLY Wikipedia URLs.
   agent: researcher
 
-writing_task:
+planning_task:
   description: |
-    Based solely on the researcher's findings, write a Markdown-formatted article including:
-    - Title
-    - TL;DR (3–5 sentences)
-    - Introduction
-    - 3–5 explanatory sections (H2)
-    - Conclusion
-    - "References (Wikipedia)" section containing only the same URLs provided by the researcher.
-    Do not add or reference any external links.
+    Using ONLY the researcher’s findings, produce an outline and RETURN ONLY a single JSON object that matches the schema below.
+    Goals:
+      - Align headings with users’ information needs (strong information scent).
+      - Produce scannable H2s and 3–6 bullets under each.
+      - For each section, list the exact supporting Wikipedia URLs from research (no new links).
+    Output rules:
+      - Return ONLY JSON (no Markdown/code fences/extra text).
+      - Do not invent sources or facts; if insufficient, state minimal viable sections and note gaps.
+    OutlineModel schema:
+      {
+        "audience": "string",
+        "angle": "string",
+        "working_title": "string",
+        "tl_dr": "string (2–3 sentences)",
+        "seo_keywords": ["string", "..."],
+        "sections": [
+          {
+            "heading": "string",
+            "bullet_points": ["string", "..."],      // 3–6
+            "wikipedia_urls": ["https://en.wikipedia.org/...", "..."]  // ≥1, from research
+          }
+        ]
+      }
   expected_output: |
-    A complete Markdown article ready to publish, referencing only Wikipedia pages.
-  agent: writer
+    A JSON object matching OutlineModel exactly. No extra keys, no prose.
+  agent: content_planner
   context:
     - research_task
 
+writing_task:
+  description: |
+    Using ONLY the research and the planner’s outline, write the article and RETURN ONLY a JSON object (no extra text).
+    Requirements:
+      - Body length (sum of all sections.content_md) MUST be ≥ 300 words; use clear, consistent Markdown.
+      - Provide 3–5 H2 sections matching the outline headings.
+      - References: ONLY Wikipedia URLs mentioned by the planner/researcher.
+      - Language: if "{language}" is provided, write accordingly; otherwise default to English.
+      - Style: active voice, short sentences, define terms on first use, avoid hedging and hype.
+      - DO NOT include code fences or Markdown outside JSON. DO NOT add new sources.
+    ArticleDraft shape (for backend validation):
+      {
+        "title": "string",
+        "slug": "kebab-case-string",
+        "language": "en" | "pt",
+        "summary": "2–3 sentences",
+        "tags": ["string", "..."],
+        "author": "string|null",
+        "sections": [
+          { "heading": "string", "content_md": "Markdown string" }
+        ],
+        "references": [
+          { "title": "string", "url": "https://en.wikipedia.org/...", "source": "string|null", "accessed_at": "ISO-8601|null" }
+        ],
+        "word_count": 300
+      }
+  expected_output: |
+    Return ONLY a valid JSON object matching ArticleDraft (no code fences, no commentary). The backend will verify ≥ 300 words against the body.
+  agent: writer
+  context:
+    - research_task
+    - planning_task
+
+fact_check_task:
+  description: |
+    Verify the writer’s JSON article against the EXACT Wikipedia URLs using ONLY `wikipedia_search` and `wikipedia_fetch`.
+    For each section, check claims for support/contradictions; propose minimal edits when needed.
+    Instructions:
+      - Use only the allowed tools (MediaWiki Action API). No external links.
+      - Quote short claim snippets to pinpoint the issue; keep quotes ≤ 25 words.
+      - If fully supported, mark "supported". If not present, "missing_citation". If contradicted, "contradicted".
+      - Return ONLY JSON conforming to the schema below (no prose).
+    FactCheckReport schema:
+      {
+        "overall_status": "pass" | "needs_fixes",
+        "issue_count": 0,
+        "issues": [
+          {
+            "section_heading": "string",
+            "excerpt_or_claim": "string",
+            "verdict": "supported" | "missing_citation" | "contradicted",
+            "supporting_urls": ["https://en.wikipedia.org/...", "..."],  // Wikipedia only
+            "suggested_fix": "string|null"  // concise rewrite or instruction
+          }
+        ]
+      }
+  expected_output: |
+    A JSON object matching FactCheckReport. If no issues, set "issue_count": 0 and "overall_status": "pass".
+  agent: fact_checker
+  context:
+    - research_task
+    - writing_task
+
 editing_task:
   description: |
-    Review the draft for clarity, grammar, cohesion, and factual alignment with the information obtained from Wikipedia.
-    Make sure the final version includes only Wikipedia references.
-    Deliver a polished Markdown file.
+    Apply the fact-check report to the writer’s JSON and RETURN ONLY the final JSON article (no extra text).
+    Requirements:
+      - Fix or remove any claim marked "missing_citation" or "contradicted". Use only supported wording.
+      - Keep ONLY Wikipedia URLs in references; ensure titles and URLs are accurate and consistent.
+      - Ensure ≥ 300 words in body; headings are descriptive; Markdown follows CommonMark conventions (lists/links/headers).
+      - Style polish: clarity, grammar, parallelism, and tone consistency; avoid jargon unless defined.
+      - DO NOT add new sources; DO NOT output Markdown outside JSON; NO code fences.
   expected_output: |
-    The final, edited Markdown article, clean and professional, with only Wikipedia references.
-  agent: editor
+    The final JSON article object (ArticleDraft shape). The backend will upgrade/validate to ArticleModel (enforcing ≥ 300 words and structure).
+  agent: copy_editor
   context:
     - writing_task
+    - fact_check_task
