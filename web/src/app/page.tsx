@@ -5,78 +5,76 @@ import { API_BASE, createRun, getResult, getStatus } from "@/lib/api";
 
 type Data = {
   status?: "queued" | "running" | "finished" | "failed";
-  step?: "research" | "writing" | "editing";
   error?: string;
 };
 
 export default function OnePageApp() {
-  const [question, setQuestion] = useState("");
-  const [runId, setRunId] = useState<string | null>(null);
-  const [status, setStatus] = useState<Data>({});
-  const [answer, setAnswer] = useState<string>("");
-  const [busy, setBusy] = useState(false);
-  const esRef = useRef<EventSource | null>(null);
+  const [question, setQuestion] = useState("");  // pergunta do user
+  const [runId, setRunId] = useState<string | null>(null);  // ID
+  const [status, setStatus] = useState<Data>({});  // status
+  const [answer, setAnswer] = useState<string>("");  // resposta gerada
+  const [busy, setBusy] = useState(false);  // se a aplicacao esta ocupada processando
+  const esRef = useRef<EventSource | null>(null);  // ref para sse
 
-  // closes SSE on unmount
+  // Fecha a SSE quando o componente for desmontado
   useEffect(() => {
     return () => {
-      if (esRef.current) esRef.current.close();
+      if (esRef.current) esRef.current.close();  
     };
   }, []);
 
+  // submeter a pergunta
   async function onSubmit(e: React.FormEvent) {
-    e.preventDefault();
-    if (!question.trim()) return;
-    setBusy(true);
-    setAnswer("");
-    setStatus({ status: "queued" });
-    setRunId(null);
+    e.preventDefault();  
+    if (!question.trim()) return; 
+    setBusy(true);  // ocupado enquanto processa
+    setAnswer("");  // Limpa a resposta anterior
+    setStatus({ status: "queued" }); 
+    setRunId(null);  
 
     try {
-      // 1) create run (send question as "topic")
       const { run_id } = await createRun({
         topic: question,
         use_wikipedia: true,
       });
-      setRunId(run_id);
+      setRunId(run_id);  
 
-      // 2) get current status (bootstrap)
+      // status inicial
       getStatus(run_id).then((s) => setStatus(s)).catch(() => {});
 
-      // 3) open SSE for real-time progress
+      // SSE para tempo real
       const es = new EventSource(`${API_BASE}/runs/${run_id}/stream`);
       esRef.current = es;
 
+      // att status da exec
       es.addEventListener("update", (ev) => {
         try {
           const d = JSON.parse((ev as MessageEvent).data) as Data;
-          setStatus(d);
+          setStatus(d);  
           if (d.status === "finished") {
-            // 4) fetch final result (Markdown)
+          
             getResult(run_id)
               .then((r) => setAnswer(r.markdown))
               .catch(() => {});
-            es.close();
+            es.close();  // Fecha SSE quando concluido
           }
           if (d.status === "failed") {
-            es.close();
+            es.close();  // Fecha SSE se falhar
           }
         } catch {
-          /* ignore parse */
         }
       });
 
       es.addEventListener("error", () => {
-        // optional: reconnect/display toast
       });
     } catch (err: any) {
-      setStatus({ status: "failed", error: err?.message || "Request failed" });
+      setStatus({ status: "failed", error: err?.message || "Request failed" });  
     } finally {
-      setBusy(false);
+      setBusy(false);  
     }
   }
 
-  const shortId = runId ? runId.slice(0, 8) : "";
+  const shortId = runId ? runId.slice(0, 8) : "";  // primeiros 8 caracteres do ID da exec
 
   return (
     <main className="min-h-dvh max-w-3xl mx-auto p-6 space-y-8">
@@ -90,15 +88,15 @@ export default function OnePageApp() {
       <form onSubmit={onSubmit} className="space-y-3">
         <input
           value={question}
-          onChange={(e) => setQuestion(e.target.value)}
+          onChange={(e) => setQuestion(e.target.value)}  
           placeholder="E.g., Why do orange cats seem more social?"
           className="w-full border rounded-lg px-3 py-2 outline-none focus:ring"
         />
         <button
-          disabled={busy}
+          disabled={busy}  
           className="px-4 py-2 rounded-lg bg-black text-white disabled:opacity-50"
         >
-          {busy ? "Sending…" : "Ask"}
+          {busy ? "Sending…" : "Ask"}  {/* Altera o texto do botão conforme o estado de "busy" */}
         </button>
       </form>
 
@@ -111,32 +109,33 @@ export default function OnePageApp() {
           </div>
           <div className="text-sm">
             <p>
-              <b>Status:</b> {status.status || "—"}
-              {status.step ? ` · step: ${status.step}` : ""}
+              <b>Status:</b> {status.status || "—"}  {/* status */}
             </p>
             {status.error && (
-              <p className="text-red-600">Error: {status.error}</p>
+              <p className="text-red-600">Error: {status.error}</p>  
             )}
           </div>
           <div className="w-full h-2 bg-gray-200 rounded">
             <div
-              className="h-2 bg-black rounded transition-all"
+              className={`h-2 rounded transition-all ${
+                status.status === "finished"
+                  ? "bg-black"  
+                  : "bg-black animate-progress-bar"  
+              }`}
               style={{
                 width:
                   status.status === "finished"
-                    ? "100%"
-                    : status.step === "writing"
-                    ? "66%"
-                    : status.step === "research" || status.status === "running"
-                    ? "33%"
-                    : "10%",
+                    ? "100%"  
+                    : status.status === "running"
+                    ? "50%"  
+                    : "10%",  
               }}
             />
           </div>
         </section>
       )}
 
-      {/* Final answer */}
+      {/* Resposta final */}
       <section className="space-y-2">
         <h2 className="font-medium">Answer</h2>
         {answer ? (

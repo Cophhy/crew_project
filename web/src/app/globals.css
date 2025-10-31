@@ -1,3 +1,17 @@
 @import "tailwindcss";
 :root { color-scheme: light; }
 html, body { height: 100%; }
+
+@keyframes progress {
+  0% {
+    width: 0%;
+  }
+  100% {
+    width: 100%;
+  }
+}
+
+.animate-progress-bar {
+  animation: progress 2s infinite ease-in-out;
+}
+
