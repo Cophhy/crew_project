@@ -38,12 +38,3 @@ editing_task:
   agent: editor
   context:
     - writing_task
-
-reporting_task:
-  description: >
-    Revise os achados, estruture como relatório e finalize.
-  expected_output: >
-    Um relatório em Markdown, com título, resumo, achados, seções e referências.
-  agent: writer
-  markdown: true          # ← a doc permite usar markdown no YAML
-  output_file: report.md  # ← mantém o .md no root

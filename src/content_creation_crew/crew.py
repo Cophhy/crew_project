@@ -11,9 +11,6 @@ from content_creation_crew.tools.wikipedia_tool import (
 # 🔹 ADICIONADO: tool de contagem de palavras do corpo
 from content_creation_crew.tools.wordcount import BodyWordCountTool  # <— ADICIONADO
 
-# 🔹 ADICIONADO: esquema Pydantic para saída estruturada
-from content_creation_crew.schemas import ResearchReport  # <— ADICIONADO (crie este modelo)
-
 
 @CrewBase
 class ContentCreationCrewCrew():
@@ -108,11 +105,6 @@ class ContentCreationCrewCrew():
             context=[self.editing_task()],       # pega o artigo já editado
             expected_output="A Markdown article whose BODY is ≥ 300 words (or unchanged if already ≥ 300).",
             # obs.: não é necessário declarar tools aqui; elas vêm do Agent
-
-            # 🔹 ADICIONADO: manter saída Markdown em arquivo + saída estruturada via Pydantic
-            markdown=True,                       # <— ADICIONADO: mantém renderização em Markdown
-            output_file="report.md",             # <— ADICIONADO: grava o Markdown
-            output_pydantic=ResearchReport,      # <— ADICIONADO: segunda saída estruturada (Pydantic)
         )
 
     @crew
