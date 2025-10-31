@@ -26,39 +26,35 @@ def _is_heading(line: str) -> bool:
     return any(s.startswith(p) for p in _HEADING_PREFIXES)
 
 def extract_body(markdown: str) -> str:
-    """
-    Remove: título, TL;DR (seção completa), TODAS as linhas de heading
-    e tudo a partir de '## References' (inclusive).
-    """
     lines = markdown.splitlines()
     out = []
     in_tldr = False
 
     for raw in lines:
         line = raw.rstrip()
+        print(f"Processing line: {line}")  # Adicionando depuração
         low = line.strip().lower()
 
-        # corta tudo a partir de '## references'
         if low.startswith("## references"):
             break
 
-        # TL;DR começa em '## TL;DR' e termina no próximo heading '## '
         if low.startswith("## tl;dr"):
             in_tldr = True
             continue
         if in_tldr and line.strip().startswith("## "):
             in_tldr = False
-            # não inclui o heading; segue para próxima linha
             continue
 
-        # remove todas as linhas de heading do count
         if _is_heading(line):
             continue
 
         if not in_tldr:
             out.append(line)
 
-    return "\n".join(out).strip()
+    body = "\n".join(out).strip()
+    print(f"Extracted body: {body}")  # Depuração para ver o conteúdo extraído
+    return body
+
 
 def count_words(text: str) -> int:
     return len(_WORD_RE.findall(text))
