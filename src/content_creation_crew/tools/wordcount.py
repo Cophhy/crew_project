@@ -1,14 +1,11 @@
-# src/content_creation_crew/tools/wordcount.py
-
 import re
 
-# Tenta importar BaseTool do pacote certo (varia por versão)
 try:
-    from crewai_tools import BaseTool  # pacote "crewai-tools"
-except Exception:  # fallback para instalações antigas
+    from crewai_tools import BaseTool  
+except Exception:  
     try:
-        from crewai.tools import BaseTool  # algumas versões expõem aqui
-    except Exception as e:  # último recurso: erro claro
+        from crewai.tools import BaseTool 
+    except Exception as e:  
         raise ImportError(
             "Não foi possível importar BaseTool. "
             "Instale 'crewai-tools' (pip install crewai-tools) "
@@ -16,7 +13,7 @@ except Exception:  # fallback para instalações antigas
         ) from e
 
 
-# ---------- Funções utilitárias (extração do CORPO e contagem) ----------
+#extracao do CORPO e contagem
 _HEADING_PREFIXES = ("#", "##", "###", "####", "#####", "######")
 
 _WORD_RE = re.compile(r"[A-Za-zÀ-ÖØ-öø-ÿ0-9_]+(?:['\-][A-Za-zÀ-ÖØ-öø-ÿ0-9_]+)?")
@@ -42,13 +39,13 @@ def extract_body(markdown: str) -> str:
         if low.startswith("## references"):
             break
 
-        # TL;DR começa em '## TL;DR' e termina no próximo heading '## '
+        # TL;DR começa e termina no próximo heading '## '
         if low.startswith("## tl;dr"):
             in_tldr = True
             continue
         if in_tldr and line.strip().startswith("## "):
             in_tldr = False
-            # não inclui o heading; segue para próxima linha
+            # nao inclui o heading
             continue
 
         # remove todas as linhas de heading do count
@@ -67,7 +64,6 @@ def body_word_count(markdown: str) -> int:
     return count_words(extract_body(markdown))
 
 
-# ---------- Tool ----------
 class BodyWordCountTool(BaseTool):
     """
     Tool chamada 'body_word_count' que recebe o artigo Markdown completo
@@ -81,10 +77,8 @@ class BodyWordCountTool(BaseTool):
         "Returns the word count as a stringified integer."
     )
 
-    # O CrewAI mapeia pelo nome do parâmetro; mantemos simples
     def _run(self, markdown: str) -> str:  # type: ignore[override]
         try:
             return str(body_word_count(markdown))
         except Exception as e:
-            # Resposta textual ajuda o LLM a entender falhas
             return f"ERROR: {e}"

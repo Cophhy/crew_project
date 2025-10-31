@@ -1,7 +1,5 @@
-# src/content_creation_crew/tools/wikipedia_tool.py
 from __future__ import annotations
 
-# --- stdlib ---
 import os
 import json
 import re
@@ -11,9 +9,8 @@ from pydantic import BaseModel, Field, PrivateAttr
 from typing import Optional, Dict, Any, Tuple, Type
 from urllib.parse import urlparse, unquote
 
-# --- third-party ---
 try:
-    # Carrega .env se disponível (não quebra se não tiver)
+    # Carrega .env se disponível
     from dotenv import load_dotenv
     load_dotenv()
 except Exception:
@@ -23,16 +20,10 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 from pydantic import BaseModel, Field
-
-# --- crewai ---
 from crewai.tools import BaseTool
 
-# ==========================
-# Config & Utils
-# ==========================
 
 WIKI_API = "https://{lang}.wikipedia.org/w/api.php"
-
 APP_UA_NAME = os.getenv("APP_UA_NAME", "ContentCreationCrew/0.1")
 WIKI_CONTACT_RAW = os.getenv("WIKI_CONTACT", "https://github.com/Cophhy/crew_project")
 
@@ -72,13 +63,9 @@ def _strip_html(text: str) -> str:
     text = html.unescape(text)
     return text.strip()
 
-# Cria uma única sessão por módulo (compartilhada entre instâncias)
+# Cria uma única sessão por módulo
 _SHARED_SESSION = _build_session()
 
-
-# ==========================
-# Search Tool
-# ==========================
 
 class WikipediaSearchInput(BaseModel):
     query: str = Field(..., description="Plain text query or JSON string.")
@@ -89,6 +76,7 @@ class WikipediaSearchTool(BaseTool):
     # Campos Pydantic (configuráveis por instância)
     lang: str = "en"
     max_chars: int = 1800
+    max_searches: int = 3  # Limite o número de pesquisas realizadas
 
     # Metadados do Tool
     name: str = "wikipedia_search"
@@ -103,6 +91,7 @@ class WikipediaSearchTool(BaseTool):
     _session: ClassVar[requests.Session] = _SHARED_SESSION
 
     def _call_api(self, lang: str, params: Dict[str, Any]) -> requests.Response:
+        """Chama a API da Wikipedia e retorna a resposta."""
         params = {"origin": "*", **params}
         url = WIKI_API.format(lang=lang)
         r = self._session.get(url, params=params, timeout=20)
@@ -113,6 +102,12 @@ class WikipediaSearchTool(BaseTool):
         return r
 
     def _run(self, query: str) -> str:
+        """Executa a pesquisa na Wikipedia com base na consulta fornecida, limitando o número de pesquisas."""
+
+        # Variável para controlar o número de pesquisas realizadas
+        search_count = 0
+        max_searches = self.max_searches
+
         data = _maybe_parse_json(query)
         if isinstance(data, dict):
             q = data.get("query") or data.get("q") or ""
@@ -126,44 +121,48 @@ class WikipediaSearchTool(BaseTool):
         if not q or not isinstance(q, str):
             return "No Wikipedia results for this query."
 
-        params = {
-            "action": "query",
-            "list": "search",
-            "srsearch": q,
-            "srlimit": max(1, min(limit, 20)),
-            "format": "json",
-            "utf8": 1,
-        }
+        # Limita o número de pesquisas
+        while search_count < max_searches:
+            params = {
+                "action": "query",
+                "list": "search",
+                "srsearch": q,
+                "srlimit": max(1, min(limit, 20)),
+                "format": "json",
+                "utf8": 1,
+            }
 
-        r = self._call_api(lang, params)
-        results = r.json().get("query", {}).get("search", [])
+            r = self._call_api(lang, params)
+            results = r.json().get("query", {}).get("search", [])
 
-        if not results:
-            return "No Wikipedia results for this query."
+            if results:
+                lines = []
+                for i, it in enumerate(results):
+                    title = it.get("title", "")
+                    url = f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"
+                    snippet = it.get("snippet", "")
+                    snippet = snippet.replace('<span class="searchmatch">', "").replace("</span>", "")
+                    snippet = _strip_html(snippet)
+                    if len(snippet) > self.max_chars:
+                        snippet = snippet[: self.max_chars].rstrip() + "..."
+                    lines.append(f"- {i+1}. {title} – {url} — {snippet}")
 
-        lines = []
-        for i, it in enumerate(results):
-            title = it.get("title", "")
-            url = f"https://{lang}.wikipedia.org/wiki/{title.replace(' ', '_')}"
-            snippet = it.get("snippet", "")
-            snippet = snippet.replace('<span class="searchmatch">', "").replace("</span>", "")
-            snippet = _strip_html(snippet)
-            if len(snippet) > self.max_chars:
-                snippet = snippet[: self.max_chars].rstrip() + "..."
-            lines.append(f"- {i+1}. {title} – {url} — {snippet}")
+                return "Wikipedia results (API)\n" + "\n".join(lines)
 
-        return "Wikipedia results (API)\n" + "\n".join(lines)
+            else:
+                # Caso não haja resultados, incrementa o contador e tenta novamente
+                search_count += 1  
+                time.sleep(0.5)  # Espera um pouco antes de tentar novamente
+
+        # Caso o limite de pesquisas seja atingido, retorna uma mensagem
+        return "No Wikipedia results for this query after multiple attempts."
 
     async def _arun(self, *_args, **_kwargs) -> str:
+        """Método assíncrono não implementado para esta ferramenta."""
         raise NotImplementedError("WikipediaSearchTool does not support async.")
 
-
-# ==========================
-# Fetch Tool
-# ==========================
-
 class WikipediaFetchInput(BaseModel):
-    # Aceita E/OU: title_or_json (string), ou campos separados
+    #title_or_json ou campos separados
     title_or_json: Optional[str] = Field(
         default=None,
         description="Plain title string or JSON string. Can be omitted if using 'title'/'url'."
@@ -178,11 +177,9 @@ class WikipediaFetchTool(BaseTool):
        Accepts page title, JSON string, OR a full /wiki/ URL (with #anchor).
     """
 
-    # Campos Pydantic
     lang: str = "en"
     max_chars: int = 6000
 
-    # Metadados do Tool
     name: str = "wikipedia_fetch"
     description: str = (
         "Fetch plaintext from a Wikipedia page using the MediaWiki API. "
@@ -194,8 +191,6 @@ class WikipediaFetchTool(BaseTool):
     args_schema: type[BaseModel] = WikipediaFetchInput
     _session: ClassVar[requests.Session] = _SHARED_SESSION
 
-
-    # ---------- HTTP ----------
     def _call_api(self, lang: str, params: Dict[str, Any]) -> requests.Response:
         params = {"origin": "*", **params}
         url = WIKI_API.format(lang=lang)
@@ -206,7 +201,6 @@ class WikipediaFetchTool(BaseTool):
         r.raise_for_status()
         return r
 
-    # ---------- helpers ----------
     @staticmethod
     def _is_wiki_url(s: str) -> bool:
         try:
@@ -242,7 +236,6 @@ class WikipediaFetchTool(BaseTool):
         section = self._clean_section_name(p.fragment) if p.fragment else None
         return (lang, title, section)
 
-    # ---------- implementação principal ----------
     def _run(
         self,
         title_or_json: Optional[str] = None,
@@ -253,7 +246,7 @@ class WikipediaFetchTool(BaseTool):
     ) -> str:
         effective_lang = (lang or self.lang or "en").strip() or "en"
 
-        # 1) Se veio URL, extrai título/âncora
+        # Se URL extrai titulo
         if url and self._is_wiki_url(url):
             url_lang, url_title, url_section = self._extract_title_and_section_from_url(url)
             if url_lang:
@@ -261,7 +254,7 @@ class WikipediaFetchTool(BaseTool):
             title = url_title or title
             section = url_section or section
 
-        # 2) Se veio title_or_json (string), tentar parsear como JSON; senão usar como título simples
+        # se title_or_json parsear como JSON; senao usar como titulo simples
         if title_or_json:
             parsed = _maybe_parse_json(title_or_json)
             if isinstance(parsed, dict):
@@ -277,7 +270,6 @@ class WikipediaFetchTool(BaseTool):
         if not title:
             return "Please provide a valid Wikipedia page title or URL."
 
-        # 3) Seção específica?
         if section:
             target = self._norm(self._clean_section_name(str(section)))
             sec_params = {
@@ -300,7 +292,6 @@ class WikipediaFetchTool(BaseTool):
                     idx = s.get("index")
                     break
             if idx is None:
-                # fallback: remove parênteses
                 alt = re.sub(r"[\(\)]", "", target)
                 for s in sections:
                     nline = self._norm(self._clean_section_name(s.get("line", "")))
@@ -327,7 +318,6 @@ class WikipediaFetchTool(BaseTool):
                 text = text[: self.max_chars].rstrip() + "..."
             return f"=== {title} — Section: {section} ===\n{text}"
 
-        # 4) Página inteira (extract)
         params = {
             "action": "query",
             "prop": "extracts",
