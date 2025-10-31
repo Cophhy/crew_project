@@ -17,11 +17,9 @@ writing_task:
     - 3–5 explanatory sections (H2)
     - Conclusion
     - "References (Wikipedia)" section containing only the same URLs provided by the researcher.
-    Hard requirement: the article body (excluding the Title, TL;DR, headings, and the "References (Wikipedia)" section)
-    must contain at least 300 words. If it is shorter, expand the content using only the research facts.
     Do not add or reference any external links.
   expected_output: |
-    A complete Markdown article ready to publish, referencing only Wikipedia pages, with a body of at least 300 words.
+    A complete Markdown article ready to publish, referencing only Wikipedia pages.
   agent: writer
   context:
     - research_task
@@ -29,12 +27,10 @@ writing_task:
 editing_task:
   description: |
     Review the draft for clarity, grammar, cohesion, and factual alignment with the information obtained from Wikipedia.
-    Make sure the final version includes only the same Wikipedia references provided by the researcher.
-    Verify the article body (excluding the Title, TL;DR, headings, and the "References (Wikipedia)" section) has at least 300 words.
-    If it does not, expand the text to meet this minimum while remaining faithful to the research.
+    Make sure the final version includes only Wikipedia references.
     Deliver a polished Markdown file.
   expected_output: |
-    The final, edited Markdown article, clean and professional, with only Wikipedia references and a body of at least 300 words.
+    The final, edited Markdown article, clean and professional, with only Wikipedia references.
   agent: editor
   context:
     - writing_task
