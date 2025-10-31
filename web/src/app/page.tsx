@@ -5,6 +5,7 @@ import { API_BASE, createRun, getResult, getStatus } from "@/lib/api";
 
 type Data = {
   status?: "queued" | "running" | "finished" | "failed";
+  step?: "research" | "writing" | "editing";
   error?: string;
 };
 
@@ -16,7 +17,7 @@ export default function OnePageApp() {
   const [busy, setBusy] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
-  // Close SSE when component unmounts
+  // closes SSE on unmount
   useEffect(() => {
     return () => {
       if (esRef.current) esRef.current.close();
@@ -32,17 +33,17 @@ export default function OnePageApp() {
     setRunId(null);
 
     try {
-      // 1) Create run (send the question as "topic")
+      // 1) create run (send question as "topic")
       const { run_id } = await createRun({
         topic: question,
         use_wikipedia: true,
       });
       setRunId(run_id);
 
-      // 2) Get current status (bootstrap)
+      // 2) get current status (bootstrap)
       getStatus(run_id).then((s) => setStatus(s)).catch(() => {});
 
-      // 3) Open SSE for real-time progress
+      // 3) open SSE for real-time progress
       const es = new EventSource(`${API_BASE}/runs/${run_id}/stream`);
       esRef.current = es;
 
@@ -51,7 +52,7 @@ export default function OnePageApp() {
           const d = JSON.parse((ev as MessageEvent).data) as Data;
           setStatus(d);
           if (d.status === "finished") {
-            // 4) Fetch final answer (Markdown)
+            // 4) fetch final result (Markdown)
             getResult(run_id)
               .then((r) => setAnswer(r.markdown))
               .catch(() => {});
@@ -66,7 +67,7 @@ export default function OnePageApp() {
       });
 
       es.addEventListener("error", () => {
-        // Optional: reconnect/display toast
+        // optional: reconnect/display toast
       });
     } catch (err: any) {
       setStatus({ status: "failed", error: err?.message || "Request failed" });
@@ -82,8 +83,7 @@ export default function OnePageApp() {
       <header className="space-y-1">
         <h1 className="text-2xl font-semibold">Ask the AI</h1>
         <p className="text-sm opacity-70">
-          Enter your question below. We'll track the status and show you the
-          final answer.
+          Type your question below. We'll track the status and show you the final answer.
         </p>
       </header>
 
@@ -91,14 +91,14 @@ export default function OnePageApp() {
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="e.g. Why do orange cats seem more sociable?"
+          placeholder="E.g., Why do orange cats seem more social?"
           className="w-full border rounded-lg px-3 py-2 outline-none focus:ring"
         />
         <button
           disabled={busy}
           className="px-4 py-2 rounded-lg bg-black text-white disabled:opacity-50"
         >
-          {busy ? "Submitting…" : "Ask"}
+          {busy ? "Sending…" : "Ask"}
         </button>
       </form>
 
@@ -112,6 +112,7 @@ export default function OnePageApp() {
           <div className="text-sm">
             <p>
               <b>Status:</b> {status.status || "—"}
+              {status.step ? ` · step: ${status.step}` : ""}
             </p>
             {status.error && (
               <p className="text-red-600">Error: {status.error}</p>
@@ -124,8 +125,10 @@ export default function OnePageApp() {
                 width:
                   status.status === "finished"
                     ? "100%"
-                    : status.status === "running"
-                    ? "50%"
+                    : status.step === "writing"
+                    ? "66%"
+                    : status.step === "research" || status.status === "running"
+                    ? "33%"
                     : "10%",
               }}
             />
@@ -133,7 +136,7 @@ export default function OnePageApp() {
         </section>
       )}
 
-      {/* Final Answer */}
+      {/* Final answer */}
       <section className="space-y-2">
         <h2 className="font-medium">Answer</h2>
         {answer ? (
@@ -144,7 +147,7 @@ export default function OnePageApp() {
           />
         ) : (
           <p className="text-sm opacity-70">
-            {runId ? "Waiting for the answer…" : "Submit a question to start."}
+            {runId ? "Waiting for the answer…" : "Send a question to start."}
           </p>
         )}
       </section>
