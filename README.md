@@ -1,54 +1,159 @@
-# ContentCreationCrew Crew
 
-Welcome to the ContentCreationCrew Crew project, powered by [crewAI](https://crewai.com). This template is designed to help you set up a multi-agent AI system with ease, leveraging the powerful and flexible framework provided by crewAI. Our goal is to enable your agents to collaborate effectively on complex tasks, maximizing their collective intelligence and capabilities.
+# Content Creation Crew Project
 
-## Installation
+## Descrição do Projeto
 
-Ensure you have Python >=3.10 <3.14 installed on your system. This project uses [UV](https://docs.astral.sh/uv/) for dependency management and package handling, offering a seamless setup and execution experience.
+O **Content Creation Crew** é um projeto que utiliza o **CrewAI** para criar e gerenciar agentes responsáveis pela criação de conteúdo. O objetivo do projeto é permitir que um conjunto de agentes (pesquisadores, escritores e editores) trabalhem juntos para gerar artigos e outros tipos de conteúdo, baseados em informações verificáveis do **Wikipedia**.
 
-First, if you haven't already, install uv:
+### Funcionalidades
 
-```bash
-pip install uv
-```
+O sistema oferece as seguintes funcionalidades:
 
-Next, navigate to your project directory and install the dependencies:
+- **Pesquisa no Wikipedia**: Permite obter informações sobre um tópico usando a API oficial do Wikipedia.
+- **Criação de Conteúdo**: Gera conteúdo em formato Markdown com base nas informações coletadas.
+- **Edição de Conteúdo**: Revisa e edita o conteúdo gerado, garantindo a qualidade e a consistência das informações.
 
-(Optional) Lock the dependencies and install them by using the CLI command:
-```bash
-crewai install
-```
-### Customizing
+### Agentes
 
-**Add your `OPENAI_API_KEY` into the `.env` file**
+O projeto é composto por três agentes principais:
 
-- Modify `src/content_creation_crew/config/agents.yaml` to define your agents
-- Modify `src/content_creation_crew/config/tasks.yaml` to define your tasks
-- Modify `src/content_creation_crew/crew.py` to add your own logic, tools and specific args
-- Modify `src/content_creation_crew/main.py` to add custom inputs for your agents and tasks
+1. **Pesquisador (Researcher)**: Este agente pesquisa o tópico fornecido no **Wikipedia**, coleta fatos verificáveis e URLs correspondentes.
+2. **Escritor (Writer)**: Com base nas informações coletadas pelo pesquisador, o escritor cria um conteúdo claro e coeso, estruturado em Markdown.
+3. **Editor**: O editor revisa o conteúdo gerado pelo escritor, garantindo que o artigo esteja coeso, preciso e com referências verificáveis.
 
-## Running the Project
+O fluxo de execução dos agentes é **sequencial**, com cada agente realizando sua função em ordem.
 
-To kickstart your crew of AI agents and begin task execution, run this from the root folder of your project:
+## Estrutura do Código
 
-```bash
-$ crewai run
-```
+### 1. **`api/`**:
+Contém a lógica da **API**, que expõe os serviços para interação com o sistema. Isso permite que o conteúdo seja gerado, consultado e modificado.
 
-This command initializes the content_creation_crew Crew, assembling the agents and assigning them tasks as defined in your configuration.
+- **`api.app.main:app`**: Este é o ponto de entrada para o servidor da API, que deve ser executado com o **Uvicorn**.
 
-This example, unmodified, will run the create a `report.md` file with the output of a research on LLMs in the root folder.
+### 2. **`web/`**:
+Contém o **front-end** do projeto, incluindo os arquivos da interface do usuário. A interface permite interagir com os agentes e visualizar os resultados da criação de conteúdo.
 
-## Understanding Your Crew
+### 3. **`crew.py`**:
+Define a **Crew** de criação de conteúdo, configurando os agentes e as tarefas. A classe `ContentCreationCrewCrew` orquestra as interações entre os agentes, realizando as etapas de pesquisa, escrita e edição.
 
-The content_creation_crew Crew is composed of multiple AI agents, each with unique roles, goals, and tools. These agents collaborate on a series of tasks, defined in `config/tasks.yaml`, leveraging their collective skills to achieve complex objectives. The `config/agents.yaml` file outlines the capabilities and configurations of each agent in your crew.
+### 4. **`tools/`**:
+Contém as ferramentas utilizadas pelos agentes, responsáveis por interagir com a API do Wikipedia e realizar tarefas específicas, como pesquisa e extração de conteúdo.
 
-## Support
+- **`WikipediaSearchTool`**: Ferramenta para realizar buscas no Wikipedia.
+- **`WikipediaFetchTool`**: Ferramenta para buscar conteúdo detalhado de uma página ou seção específica do Wikipedia.
+- **`BodyWordCountTool`**: Ferramenta para contar palavras no conteúdo gerado.
 
-For support, questions, or feedback regarding the ContentCreationCrew Crew or crewAI.
-- Visit our [documentation](https://docs.crewai.com)
-- Reach out to us through our [GitHub repository](https://github.com/joaomdmoura/crewai)
-- [Join our Discord](https://discord.com/invite/X4JWnZnxPb)
-- [Chat with our docs](https://chatg.pt/DWjSBZn)
+### 5. **`agents.yaml`** e **`tasks.yaml`**:
+Arquivos de configuração que definem as propriedades dos **agentes** e das **tarefas**. O `agents.yaml` especifica os **papéis** e **objetivos** de cada agente, enquanto o `tasks.yaml` descreve as **tarefas** que os agentes executam (como pesquisa, escrita e edição).
 
-Let's create wonders together with the power and simplicity of crewAI.
+### 6. **`models.py`**:
+Define os **modelos Pydantic** usados para validar as entradas e saídas dos agentes. Eles garantem que os dados estejam em conformidade com o formato esperado antes de serem processados pelos agentes.
+
+## Como Usar o Projeto
+
+### 1. **Instalação de Dependências (Back-End)**
+
+O projeto utiliza o **`pyproject.toml`** para gerenciar as dependências no back-end. Siga os passos abaixo para instalar as dependências:
+
+1. **Crie um ambiente virtual** para o projeto (recomendado para isolar as dependências):
+
+   ```bash
+   python -m venv venv
+   ```
+
+2. **Ative o ambiente virtual**:
+
+   - No **Windows**:
+
+     ```bash
+     .env\Scriptsctivate
+     ```
+
+   - No **Linux/Mac**:
+
+     ```bash
+     source venv/bin/activate
+     ```
+
+3. **Instale as dependências do back-end**:
+
+   Com o ambiente virtual ativado, instale as dependências do projeto usando o **Poetry**:
+
+   ```bash
+   poetry install
+   ```
+
+4. **Carregue as variáveis de ambiente**:
+
+   Certifique-se de que o arquivo `.env` contém as variáveis necessárias, como `APP_UA_NAME` e `WIKI_CONTACT`, que são utilizadas para configurar o cabeçalho de User-Agent das requisições.
+
+   Exemplo de um arquivo `.env`:
+
+   ```plaintext
+   APP_UA_NAME=ContentCreationCrew/0.1
+   WIKI_CONTACT=https://github.com/Cophhy/crew_project
+   ```
+
+### 2. **Instalação de Dependências (Front-End)**
+
+O front-end do projeto utiliza o **npm**. Para configurar o front-end, siga os passos abaixo:
+
+1. **Navegue até a pasta `web/`**:
+
+   ```bash
+   cd web
+   ```
+
+2. **Instale as dependências do front-end com o npm**:
+
+   ```bash
+   npm install
+   ```
+
+### 3. **Executando o Projeto**
+
+Agora que as dependências estão instaladas, você pode iniciar tanto o **back-end** quanto o **front-end** do projeto.
+
+1. **Inicie o Front-End**:
+
+   Na pasta `web/`, execute o comando:
+
+   ```bash
+   npm run dev
+   ```
+
+   Isso iniciará o **servidor de desenvolvimento** para o front-end, permitindo que você interaja com a interface do usuário no navegador.
+
+2. **Inicie o Back-End (API)**:
+
+   Para iniciar o back-end, na raiz do projeto, execute o comando:
+
+   ```bash
+   uvicorn api.app.main:app --reload --reload-dir api --reload-dir src
+   ```
+
+   Isso iniciará o servidor **Uvicorn** para o back-end da API, com **hot reload**.
+
+
+## Estrutura de Agentes e Tarefas
+
+### **Agentes**:
+
+- **Pesquisador** (`researcher`): Busca dados no **Wikipedia** sobre o tópico.
+- **Escritor** (`writer`): Cria o conteúdo em **Markdown** com base nas informações coletadas.
+- **Editor** (`editor`): Revisa o conteúdo gerado, garantindo clareza e consistência.
+
+### **Tarefas**:
+
+- **`research_task`**: Tarefa do **pesquisador** que realiza a busca no Wikipedia.
+- **`writing_task`**: Tarefa do **escritor** que cria o conteúdo em Markdown.
+- **`editing_task`**: Tarefa do **editor** que revisa o conteúdo gerado.
+
+## Futuras Melhorias
+
+O projeto possui várias possibilidades de melhorias, incluindo:
+
+- **Adicionar Pydantic na saída dos agentes**: Para garantir uma maior consistência e validação nas saídas dos agentes.
+- **Adicionar um agente especializado para revisão de fatos e veracidade**: Para garantir que as informações fornecidas sejam precisas e verificadas.
+- **Melhorar suporte para perguntas em português**: Para tornar o sistema mais acessível e funcional em múltiplos idiomas, especialmente o português.
+
