@@ -17,7 +17,7 @@ export default function OnePageApp() {
   const [busy, setBusy] = useState(false);
   const esRef = useRef<EventSource | null>(null);
 
-  // encerra SSE ao desmontar
+  // closes SSE on unmount
   useEffect(() => {
     return () => {
       if (esRef.current) esRef.current.close();
@@ -33,17 +33,17 @@ export default function OnePageApp() {
     setRunId(null);
 
     try {
-      // 1) cria execução (envia a pergunta como "topic")
+      // 1) create run (send question as "topic")
       const { run_id } = await createRun({
         topic: question,
         use_wikipedia: true,
       });
       setRunId(run_id);
 
-      // 2) pega status atual (bootstrap)
+      // 2) get current status (bootstrap)
       getStatus(run_id).then((s) => setStatus(s)).catch(() => {});
 
-      // 3) abre SSE para progresso em tempo real
+      // 3) open SSE for real-time progress
       const es = new EventSource(`${API_BASE}/runs/${run_id}/stream`);
       esRef.current = es;
 
@@ -52,7 +52,7 @@ export default function OnePageApp() {
           const d = JSON.parse((ev as MessageEvent).data) as Data;
           setStatus(d);
           if (d.status === "finished") {
-            // 4) busca resposta final (Markdown)
+            // 4) fetch final result (Markdown)
             getResult(run_id)
               .then((r) => setAnswer(r.markdown))
               .catch(() => {});
@@ -67,7 +67,7 @@ export default function OnePageApp() {
       });
 
       es.addEventListener("error", () => {
-        // opcional: reconectar/exibir toast
+        // optional: reconnect/display toast
       });
     } catch (err: any) {
       setStatus({ status: "failed", error: err?.message || "Request failed" });
@@ -81,10 +81,9 @@ export default function OnePageApp() {
   return (
     <main className="min-h-dvh max-w-3xl mx-auto p-6 space-y-8">
       <header className="space-y-1">
-        <h1 className="text-2xl font-semibold">Pergunte para a IA</h1>
+        <h1 className="text-2xl font-semibold">Ask the AI</h1>
         <p className="text-sm opacity-70">
-          Digite sua pergunta abaixo. Vamos acompanhar o status e te mostrar a
-          resposta final.
+          Type your question below. We'll track the status and show you the final answer.
         </p>
       </header>
 
@@ -92,14 +91,14 @@ export default function OnePageApp() {
         <input
           value={question}
           onChange={(e) => setQuestion(e.target.value)}
-          placeholder="Ex.: Por que gatos laranja parecem mais sociáveis?"
+          placeholder="E.g., Why do orange cats seem more social?"
           className="w-full border rounded-lg px-3 py-2 outline-none focus:ring"
         />
         <button
           disabled={busy}
           className="px-4 py-2 rounded-lg bg-black text-white disabled:opacity-50"
         >
-          {busy ? "Enviando…" : "Perguntar"}
+          {busy ? "Sending…" : "Ask"}
         </button>
       </form>
 
@@ -112,11 +111,11 @@ export default function OnePageApp() {
           </div>
           <div className="text-sm">
             <p>
-              <b>Situação:</b> {status.status || "—"}
-              {status.step ? ` · passo: ${status.step}` : ""}
+              <b>Status:</b> {status.status || "—"}
+              {status.step ? ` · step: ${status.step}` : ""}
             </p>
             {status.error && (
-              <p className="text-red-600">Erro: {status.error}</p>
+              <p className="text-red-600">Error: {status.error}</p>
             )}
           </div>
           <div className="w-full h-2 bg-gray-200 rounded">
@@ -137,9 +136,9 @@ export default function OnePageApp() {
         </section>
       )}
 
-      {/* Resposta final */}
+      {/* Final answer */}
       <section className="space-y-2">
-        <h2 className="font-medium">Resposta</h2>
+        <h2 className="font-medium">Answer</h2>
         {answer ? (
           <textarea
             className="w-full h-96 border rounded-lg p-3 font-mono text-sm"
@@ -148,7 +147,7 @@ export default function OnePageApp() {
           />
         ) : (
           <p className="text-sm opacity-70">
-            {runId ? "Aguardando a resposta…" : "Envie uma pergunta para começar."}
+            {runId ? "Waiting for the answer…" : "Send a question to start."}
           </p>
         )}
       </section>

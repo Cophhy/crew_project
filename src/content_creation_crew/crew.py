@@ -1,12 +1,8 @@
 from crewai import Agent, Crew, Process, Task
 from crewai.project import CrewBase, agent, crew, task
 from crewai import LLM
-
-# ✅ agora importamos as CLASSES BaseTool que você acabou de criar
-from content_creation_crew.tools.wikipedia_tool import (
-    WikipediaSearchTool,
-    WikipediaFetchTool,
-)
+from content_creation_crew.tools.wordcount_tool import BodyWordCountTool  
+from content_creation_crew.tools.wikipedia_tool import WikipediaSearchTool, WikipediaFetchTool  
 
 @CrewBase
 class ContentCreationCrewCrew():
@@ -23,6 +19,7 @@ class ContentCreationCrewCrew():
         # ✅ instâncias de BaseTool do CrewAI
         self.wiki_search = WikipediaSearchTool(lang="en", max_chars=1800)
         self.wiki_fetch  = WikipediaFetchTool(lang="en", max_chars=6000)
+        self.word_count_tool = BodyWordCountTool()  # Instância do tool de contagem de palavras
 
     @agent
     def researcher(self) -> Agent:
@@ -39,7 +36,7 @@ class ContentCreationCrewCrew():
         return Agent(
             config=self.agents_config['writer'],
             llm=self.llm,
-            tools=[],
+            tools=[self.word_count_tool],  # Adiciona a ferramenta de contagem de palavras
             allow_delegation=False,
             verbose=True,
         )
@@ -85,3 +82,16 @@ class ContentCreationCrewCrew():
             process=Process.sequential,
             verbose=True,
         )
+
+    def ensure_min_word_count(self, markdown: str) -> str:
+        """
+        Verifica se o número de palavras do corpo do artigo é pelo menos 300.
+        Se não for, solicita ao escritor que adicione mais conteúdo.
+        """
+        # Remove a introdução e qualquer texto inicial irrelevante
+        content_body = self.word_count_tool.extract_body(markdown)
+        word_count = self.word_count_tool.count_words(content_body)
+        
+        if word_count < 300:
+            return f"O artigo tem apenas {word_count} palavras. Adicione mais conteúdo para atingir pelo menos 300 palavras."
+        return f"O artigo tem {word_count} palavras, atendendo ao requisito mínimo de 300 palavras."
