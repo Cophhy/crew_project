@@ -6,7 +6,7 @@ from content_creation_crew.tools.wikipedia_tool import WikipediaSearchTool, Wiki
 
 @CrewBase
 class ContentCreationCrewCrew():
-    """ContentCreationCrew crew"""
+    """ContentCreationCrew crew XD crewcrew"""
 
     agents_config = 'config/agents.yaml'
     tasks_config = 'config/tasks.yaml'
@@ -27,7 +27,7 @@ class ContentCreationCrewCrew():
             config=self.agents_config['researcher'],
             llm=self.llm,
             tools=[self.wiki_search, self.wiki_fetch],  # apenas Wikipedia
-            allow_delegation=False,
+            allow_delegation=False, #nao permite delegar para outro agente
             verbose=True,
         )
 
@@ -74,24 +74,34 @@ class ContentCreationCrewCrew():
             context=[self.writing_task()],
         )
 
+    @task
+    def enforce_min_words_task(self) -> Task:
+        """
+        Esta task usa a tool `body_word_count` para medir o corpo do artigo
+        (exclui Title, TL;DR, headings e a seção "References (Wikipedia)").
+        Se < 300, expande SOMENTE o corpo até ≥ 300 palavras, mantendo título,
+        headings e a lista de referências/URLs exatamente como estão.
+        """
+        return Task(
+            description=(
+                "Use the `body_word_count` tool to compute the BODY word count of the Markdown article below "
+                "(exclude Title, TL;DR, all headings, and the 'References (Wikipedia)' section). "
+                "If the BODY has 300 words or more, return the article EXACTLY as-is. "
+                "If the BODY has fewer than 300 words, expand ONLY the BODY to reach at least 300 words, "
+                "preserving the existing Title, all headings, and keeping the 'References (Wikipedia)' list "
+                "identical (same entries, same URLs). Do NOT add new links or sources; only elaborate using "
+                "the already-present research facts and explanations."
+            ),
+            agent=self.editor(),                 # o editor já tem a tool
+            context=[self.editing_task()],       # pega o artigo já editado
+            expected_output="A Markdown article whose BODY is ≥ 300 words (or unchanged if already ≥ 300).",
+        )
+
     @crew
     def crew(self) -> Crew:
         return Crew(
             agents=self.agents,
-            tasks=self.tasks,
+            tasks=self.tasks,        # a enforce_min_words_task vem por último (sequencial)
             process=Process.sequential,
             verbose=True,
         )
-
-    def ensure_min_word_count(self, markdown: str) -> str:
-        """
-        Verifica se o número de palavras do corpo do artigo é pelo menos 300.
-        Se não for, solicita ao escritor que adicione mais conteúdo.
-        """
-        # Remove a introdução e qualquer texto inicial irrelevante
-        content_body = self.word_count_tool.extract_body(markdown)
-        word_count = self.word_count_tool.count_words(content_body)
-        
-        if word_count < 300:
-            return f"O artigo tem apenas {word_count} palavras. Adicione mais conteúdo para atingir pelo menos 300 palavras."
-        return f"O artigo tem {word_count} palavras, atendendo ao requisito mínimo de 300 palavras."
